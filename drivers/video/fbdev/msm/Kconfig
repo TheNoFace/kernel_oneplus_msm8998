@@ -169,6 +169,14 @@ config IRIS2P_DRC_SUPPORT
 	default n
 	---help---
 	Say y to enable
+
+config FLICKER_FREE
+	bool "Enable flicker free driver"
+	depends on FB_MSM_MDSS
+	---help---
+	The flicker free provides flicker free function without change
+	panel hardware brightness to avoid PWM flicker on OLED devices.
+
 #endif
 
 endif
