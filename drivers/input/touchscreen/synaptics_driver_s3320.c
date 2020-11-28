@@ -207,6 +207,8 @@ static int force_update = 0;
 static int LCD_WIDTH;
 static int LCD_HEIGHT;
 static int get_tp_base = 0;
+static int f4_enabled = 0;
+
 #define ENABLE_TPEDGE_LIMIT
 #ifdef ENABLE_TPEDGE_LIMIT
 static int limit_enable = 1;
@@ -1498,6 +1500,7 @@ void int_touch(void)
 			MT_TOOL_FINGER, finger_status);
 			input_report_key(ts->input_dev,
 			BTN_TOOL_FINGER, 1);
+			if (f4_enabled) input_report_key(ts->input_dev, KEY_F4, 1);
 			input_report_abs(ts->input_dev,
 			ABS_MT_POSITION_X, points.x);
 			input_report_abs(ts->input_dev,
@@ -1543,6 +1546,7 @@ void int_touch(void)
 		if (3 == (++prlog_count % 6))
 			TPD_ERR("all finger up\n");
 		input_report_key(ts->input_dev, BTN_TOOL_FINGER, 0);
+		if (f4_enabled) input_report_key(ts->input_dev, KEY_F4, 0);
 #ifndef TYPE_B_PROTOCOL
 		input_mt_sync(ts->input_dev);
 #endif
@@ -1554,7 +1558,6 @@ void int_touch(void)
 		TPD_ERR("start get base data:%d\n", get_tp_base);
 		tp_baseline_get(ts, false);
 	}
-
 #ifdef SUPPORT_GESTURE
 	if (ts->in_gesture_mode == 1 && ts->is_suspended == 1)
 		gesture_judge(ts);
@@ -1747,6 +1750,30 @@ char __user *user_buf, size_t count, loff_t *ppos)
 		baseline_ret = 0;
 	}
 	return baseline_ret;
+}
+
+static ssize_t tp_f4_read_func(struct file *file, char __user *user_buf, size_t count, loff_t *ppos)
+{
+        int ret = 0;
+        char page[PAGESIZE];
+
+        ret = sprintf(page, "%d\n", f4_enabled);
+        ret = simple_read_from_buffer(user_buf, count, ppos, page, strlen(page));
+
+        return ret;
+}
+
+static ssize_t tp_f4_write_func(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos)
+{
+        int ret, write_flag = 0;
+        char page[PAGESIZE] = {0};
+
+        ret = copy_from_user(page, user_buf, count);
+        ret = sscanf(page, "%d", &write_flag);
+
+        f4_enabled = (write_flag != 0);
+
+        return count;
 }
 
 static ssize_t i2c_device_test_read_func(struct file *file, char __user *user_buf, size_t count, loff_t *ppos)
@@ -3302,6 +3329,13 @@ static const struct file_operations tp_baseline_test_proc_fops = {
 	.owner = THIS_MODULE,
 };
 
+static const struct file_operations tp_f4_proc_fops = {
+	.read =  tp_f4_read_func,
+	.write = tp_f4_write_func,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+};
+
 #ifdef SUPPORT_GLOVES_MODE
 static const struct file_operations glove_mode_enable_proc_fops = {
 	.write = tp_glove_write_func,
@@ -3800,6 +3834,7 @@ static int init_synaptics_proc(struct synaptics_ts_data *ts)
 	CREATE_PROC_NODE(touchpanel, vendor_id, 0444);
 	CREATE_PROC_NODE(touchpanel, changer_connet, 0666);
 	CREATE_PROC_NODE(touchpanel, touch_press, 0666);
+	CREATE_PROC_NODE(touchpanel, tp_f4, 0666);
 
 #ifdef SUPPORT_TP_TOUCHKEY
 	// disable button swap and key disabler proc nodes for 17801 (dumpling)
