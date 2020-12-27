@@ -410,8 +410,7 @@ static ssize_t proximity_state_set(struct device *dev,
 
 	fpc1020->proximity_state = !!val;
 
-	if (!fpc1020->screen_state)
-		set_fpc_irq(fpc1020, !fpc1020->proximity_state);
+	set_fpc_irq(fpc1020, !fpc1020->proximity_state);
 
 	return count;
 }
