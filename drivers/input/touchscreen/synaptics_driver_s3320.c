@@ -208,6 +208,7 @@ static int LCD_WIDTH;
 static int LCD_HEIGHT;
 static int get_tp_base = 0;
 static int f4_enabled = 0;
+static int proximity_state = 0;
 
 #define ENABLE_TPEDGE_LIMIT
 #ifdef ENABLE_TPEDGE_LIMIT
@@ -1322,10 +1323,12 @@ static void gesture_judge(struct synaptics_ts_data *ts)
 
 	if ((gesture & ts->gestures_enable) != 0) {
 		gesture_upload = gesture;
-		input_report_key(ts->input_dev, keyCode, 1);
-		input_sync(ts->input_dev);
-		input_report_key(ts->input_dev, keyCode, 0);
-		input_sync(ts->input_dev);
+		if (!proximity_state) {
+			input_report_key(ts->input_dev, keyCode, 1);
+			input_sync(ts->input_dev);
+			input_report_key(ts->input_dev, keyCode, 0);
+			input_sync(ts->input_dev);
+		}
 	} else {
 		ret = i2c_smbus_read_i2c_block_data(ts->client, F12_2D_CTRL20, 3, &(reportbuf[0x0]));
 		ret = reportbuf[2] & 0x20;
@@ -1500,7 +1503,7 @@ void int_touch(void)
 			MT_TOOL_FINGER, finger_status);
 			input_report_key(ts->input_dev,
 			BTN_TOOL_FINGER, 1);
-			if (f4_enabled) input_report_key(ts->input_dev, KEY_F4, 1);
+			if (f4_enabled && !proximity_state) input_report_key(ts->input_dev, KEY_F4, 1);
 			input_report_abs(ts->input_dev,
 			ABS_MT_POSITION_X, points.x);
 			input_report_abs(ts->input_dev,
@@ -1546,7 +1549,7 @@ void int_touch(void)
 		if (3 == (++prlog_count % 6))
 			TPD_ERR("all finger up\n");
 		input_report_key(ts->input_dev, BTN_TOOL_FINGER, 0);
-		if (f4_enabled) input_report_key(ts->input_dev, KEY_F4, 0);
+		if (f4_enabled && !proximity_state) input_report_key(ts->input_dev, KEY_F4, 0);
 #ifndef TYPE_B_PROTOCOL
 		input_mt_sync(ts->input_dev);
 #endif
@@ -1772,6 +1775,30 @@ static ssize_t tp_f4_write_func(struct file *file, const char __user *user_buf, 
         ret = sscanf(page, "%d", &write_flag);
 
         f4_enabled = (write_flag != 0);
+
+        return count;
+}
+
+static ssize_t proximity_state_read_func(struct file *file, char __user *user_buf, size_t count, loff_t *ppos)
+{
+        int ret = 0;
+        char page[PAGESIZE];
+
+        ret = sprintf(page, "%d\n", proximity_state);
+        ret = simple_read_from_buffer(user_buf, count, ppos, page, strlen(page));
+
+        return ret;
+}
+
+static ssize_t proximity_state_write_func(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos)
+{
+        int ret, write_flag = 0;
+        char page[PAGESIZE] = {0};
+
+        ret = copy_from_user(page, user_buf, count);
+        ret = sscanf(page, "%d", &write_flag);
+
+        proximity_state = (write_flag != 0);
 
         return count;
 }
@@ -3336,6 +3363,13 @@ static const struct file_operations tp_f4_proc_fops = {
 	.owner = THIS_MODULE,
 };
 
+static const struct file_operations proximity_state_proc_fops = {
+	.read =  proximity_state_read_func,
+	.write = proximity_state_write_func,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+};
+
 #ifdef SUPPORT_GLOVES_MODE
 static const struct file_operations glove_mode_enable_proc_fops = {
 	.write = tp_glove_write_func,
@@ -3835,6 +3869,7 @@ static int init_synaptics_proc(struct synaptics_ts_data *ts)
 	CREATE_PROC_NODE(touchpanel, changer_connet, 0666);
 	CREATE_PROC_NODE(touchpanel, touch_press, 0666);
 	CREATE_PROC_NODE(touchpanel, tp_f4, 0666);
+	CREATE_PROC_NODE(touchpanel, proximity_state, 0666);
 
 #ifdef SUPPORT_TP_TOUCHKEY
 	// disable button swap and key disabler proc nodes for 17801 (dumpling)
