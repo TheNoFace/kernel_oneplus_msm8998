@@ -494,6 +494,21 @@ void fpc1020_input_destroy(struct fpc1020_data *fpc1020)
 		input_free_device(fpc1020->input_dev);
 }
 
+static void set_fingerprint_hal_nice(int nice)
+{
+	struct task_struct *p;
+
+	read_lock(&tasklist_lock);
+
+	for_each_process(p) {
+		if (!memcmp(p->comm, "fingerprint@2.1", sizeof("fingerprint@2.1"))) {
+			set_user_nice(p, nice);
+			break;
+		}
+	}
+	read_unlock(&tasklist_lock);
+}
+
 static void fpc1020_suspend_resume(struct work_struct *work)
 {
 	struct fpc1020_data *fpc1020 =
@@ -501,6 +516,15 @@ static void fpc1020_suspend_resume(struct work_struct *work)
 
 	if (fpc1020->screen_state) {
 		set_fpc_irq(fpc1020, true);
+		/* Restore fingerprint hal priority to defaults */
+		set_fingerprint_hal_nice(0);
+	} else {
+		/*
+		* Elevate fingerprint hal priority when screen is off to ensure
+		* the fingerprint sensor is responsive and that the haptic
+		* response on successful verification always fires.
+		*/
+		set_fingerprint_hal_nice(MIN_NICE);
 	}
 
 	sysfs_notify(&fpc1020->dev->kobj, NULL,
